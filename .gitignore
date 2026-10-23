@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.DS_Store
+# runtime files the bridge writes next to itself
+wx_state.json
+logs/
+*.log

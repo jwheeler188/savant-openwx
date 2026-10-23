@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Weather</title>
+<style>
+:root{
+  --bg:#0b1220; --bg2:#13203a; --card:rgba(255,255,255,.06); --line:rgba(255,255,255,.10);
+  --text:#eef3fb; --dim:#9fb0c8; --accent:#7cc4ff; --warn:#ffb347; --danger:#ff5d5d; --ok:#5fd38d;
+}
+:root[data-theme="light"]{
+  --bg:#eef3f9; --bg2:#dfe8f3; --card:rgba(255,255,255,.75); --line:rgba(10,30,60,.10);
+  --text:#0e1a2b; --dim:#5a6b82; --accent:#1f7ad6;
+}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+html{background:var(--bg)}
+body{font:16px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,sans-serif;
+  color:var(--text);background:radial-gradient(1200px 700px at 20% -10%,var(--bg2),var(--bg));
+  background-attachment:fixed;min-height:100vh;
+  padding:max(16px,env(safe-area-inset-top)) 16px 24px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1100px;margin:0 auto;display:grid;gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:18px;backdrop-filter:blur(12px)}
+.alert{display:none;border-color:rgba(255,93,93,.5);background:rgba(255,93,93,.14)}
+.alert.on{display:block}
+.alert.moderate{border-color:rgba(255,179,71,.5);background:rgba(255,179,71,.13)}
+.alert h3{font-size:15px;letter-spacing:.04em;text-transform:uppercase;margin-bottom:6px}
+.alert .row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-top:1px solid var(--line);font-size:15px}
+.alert .row:first-of-type{border-top:0}
+.hero{display:grid;grid-template-columns:auto 1fr auto;gap:18px;align-items:center}
+.hero svg{width:110px;height:110px}
+.temp{font-size:84px;font-weight:200;letter-spacing:-3px;line-height:1}
+.cond{font-size:22px;font-weight:500}
+.sub{color:var(--dim);font-size:15px}
+.loc{text-align:right}
+.loc .name{font-size:18px;font-weight:600}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px}
+.stat .k{color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+.stat .v{font-size:22px;font-weight:600;margin-top:2px}
+.stat .v small{font-size:13px;font-weight:500;color:var(--dim)}
+.stat.hot .v{color:var(--warn)}
+.label{color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px}
+.hours{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;text-align:center}
+.hours .h svg{width:38px;height:38px;margin:4px auto}
+.hours .t{font-size:13px;color:var(--dim)}
+.hours .tp{font-size:19px;font-weight:600}
+.hours .r{font-size:12px;color:var(--accent);min-height:15px}
+.outlook{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.ol{display:flex;gap:12px;align-items:center}
+.ol svg{width:46px;height:46px;flex:none}
+.ol .s{font-weight:600}
+.ol .d{color:var(--dim);font-size:14px}
+.days .d{display:grid;grid-template-columns:70px 40px 1fr 60px 92px;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
+.days .d:first-of-type{border-top:0}
+.days svg{width:32px;height:32px}
+.days .n{font-weight:600}
+.days .w{color:var(--dim);font-size:14px}
+.days .p{color:var(--accent);font-size:14px;text-align:right}
+.days .hl{text-align:right;font-variant-numeric:tabular-nums}
+.days .hl span{color:var(--dim)}
+.foot{color:var(--dim);font-size:12px;text-align:center}
+.foot .bad{color:var(--danger)}
+@media (max-width:720px){
+  .hero{grid-template-columns:auto 1fr}.loc{grid-column:1/-1;text-align:left}
+  .temp{font-size:64px}.hero svg{width:80px;height:80px}
+  .outlook{grid-template-columns:1fr}
+  .hours{grid-template-columns:repeat(4,1fr);row-gap:14px}
+  .days .d{grid-template-columns:56px 32px 1fr 74px}.days .w{display:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card alert" id="alert"><h3 id="alertTitle">Active alerts</h3><div id="alertRows"></div></div>
+
+  <div class="card hero">
+    <div id="curIcon"></div>
+    <div>
+      <div class="temp" id="curTemp">--°</div>
+      <div class="cond" id="curSummary">Loading…</div>
+      <div class="sub" id="curSub"></div>
+    </div>
+    <div class="loc">
+      <div class="name" id="locName"></div>
+      <div class="sub" id="sun"></div>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="k">Wind</div><div class="v" id="sWind">--</div></div>
+    <div class="stat" id="gustBox"><div class="k">Gusts</div><div class="v" id="sGust">--</div></div>
+    <div class="stat" id="uvBox"><div class="k">UV Index</div><div class="v" id="sUV">--</div></div>
+    <div class="stat"><div class="k">Humidity</div><div class="v" id="sHum">--</div></div>
+    <div class="stat"><div class="k">Rain next 3h</div><div class="v" id="sRain">--</div></div>
+    <div class="stat"><div class="k">Sky</div><div class="v" id="sSky" style="font-size:17px">--</div></div>
+  </div>
+
+  <div class="card"><div class="label">Next 24 hours</div><div class="hours" id="hours"></div></div>
+
+  <div class="card"><div class="label">Outlook</div><div class="outlook" id="outlook"></div></div>
+
+  <div class="card days"><div class="label">5-day forecast</div><div id="days"></div></div>
+
+  <div class="foot" id="foot"></div>
+</div>
+
+<script>
+const q = new URLSearchParams(location.search);
+if (q.get('theme')) document.documentElement.dataset.theme = q.get('theme');
+
+const C = {sun:'#ffc940', moon:'#cfd8e8', cloud:'#c6d2e3', cloud2:'#8fa0b8', rain:'#5fb3ff', bolt:'#ffd84a', snow:'#e8f2ff'};
+const sun = (x,y,r)=>`<circle cx="${x}" cy="${y}" r="${r}" fill="${C.sun}"/>`+
+  [...Array(8)].map((_,i)=>{const a=i*Math.PI/4,r1=r+4,r2=r+9;
+   return `<line x1="${x+Math.cos(a)*r1}" y1="${y+Math.sin(a)*r1}" x2="${x+Math.cos(a)*r2}" y2="${y+Math.sin(a)*r2}" stroke="${C.sun}" stroke-width="3" stroke-linecap="round"/>`}).join('');
+const moon = (x,y)=>`<path d="M${x+6} ${y-14}a15 15 0 1 0 12 22a12 12 0 1 1 -12 -22z" fill="${C.moon}"/>`;
+const cloud = (dx=0,dy=0,f=C.cloud)=>`<path transform="translate(${dx} ${dy})" d="M18 46h30a11 11 0 0 0 0-22a15 15 0 0 0-28-3a10 10 0 0 0-2 25z" fill="${f}"/>`;
+const drops = (n=3)=>[...Array(n)].map((_,i)=>`<line x1="${22+i*10}" y1="52" x2="${18+i*10}" y2="60" stroke="${C.rain}" stroke-width="3" stroke-linecap="round"/>`).join('');
+const ICONS = {
+  'clear-day': sun(32,32,11),
+  'clear-night': moon(30,32),
+  'partly-day': `<g transform="translate(6 -4) scale(.8)">${sun(26,26,9)}</g>${cloud(2,6)}`,
+  'partly-night': `<g transform="translate(10 -6) scale(.7)">${moon(30,32)}</g>${cloud(2,6)}`,
+  'cloudy': cloud(6,-6,C.cloud2)+cloud(0,2),
+  'fog': cloud(0,-6)+[46,52,58].map(y=>`<line x1="12" y1="${y}" x2="52" y2="${y}" stroke="${C.cloud2}" stroke-width="3" stroke-linecap="round"/>`).join(''),
+  'drizzle': cloud(0,-6)+drops(2),
+  'rain': cloud(0,-6)+drops(3),
+  'thunder': cloud(0,-8,C.cloud2)+`<path d="M34 40l-8 12h7l-4 10l11-14h-7l4-8z" fill="${C.bolt}"/>`,
+  'snow': cloud(0,-6)+[22,32,42].map(x=>`<circle cx="${x}" cy="56" r="2.6" fill="${C.snow}"/>`).join(''),
+  'sleet': cloud(0,-6)+`<line x1="22" y1="52" x2="18" y2="60" stroke="${C.rain}" stroke-width="3" stroke-linecap="round"/><circle cx="32" cy="56" r="2.6" fill="${C.snow}"/><line x1="42" y1="52" x2="38" y2="60" stroke="${C.rain}" stroke-width="3" stroke-linecap="round"/>`,
+  'wind': ['M8 24h34a7 7 0 1 0-7-7','M8 34h44a7 7 0 1 1-7 7','M8 44h24'].map(d=>`<path d="${d}" fill="none" stroke="${C.cloud}" stroke-width="3.5" stroke-linecap="round"/>`).join('')
+};
+const icon = k => `<svg viewBox="-6 -8 76 76" aria-hidden="true">${ICONS[k]||ICONS['cloudy']}</svg>`;
+const $ = id => document.getElementById(id);
+const deg = v => (v===''||v==null) ? '--' : v+'°';
+
+function render(s){
+  const metric = s.SYS_UNITS === 'metric', sp = metric ? 'km/h' : 'mph';
+  $('curIcon').innerHTML = icon(s.CUR_ICON);
+  $('curTemp').textContent = deg(s.CUR_TEMP);
+  $('curSummary').textContent = s.CUR_SUMMARY || s.CUR_WEATHER || '';
+  $('curSub').textContent = `Feels like ${deg(s.CUR_FEELS)} · H ${deg(s.D0_HIGH)} L ${deg(s.D0_LOW)}`;
+  $('locName').textContent = s.SYS_LOCATION_NAME || '';
+  $('sun').textContent = s.SUN_RISE ? `☀ ${s.SUN_RISE} · ☾ ${s.SUN_SET}` : '';
+  $('sWind').innerHTML = +s.CUR_WIND === 0 && s.CUR_WIND !== '' ? 'Calm' : `${s.CUR_WIND ?? '--'} <small>${sp} ${s.CUR_WIND_DIR||''}</small>`;
+  $('sGust').innerHTML = `${s.CUR_GUST ?? '--'} <small>${sp}</small>`;
+  $('gustBox').classList.toggle('hot', +s.ACT_WIND_PROTECT === 1);
+  $('sUV').innerHTML = `${s.CUR_UV ?? '--'} <small>${s.CUR_UV_LEVEL||''}</small>`;
+  $('uvBox').classList.toggle('hot', +s.ACT_HIGH_UV === 1);
+  $('sHum').innerHTML = `${s.CUR_HUMIDITY ?? '--'}<small>%</small>`;
+  $('sRain').innerHTML = `${s.H3_RAIN_CHANCE ?? '--'}<small>%</small>`;
+  $('sSky').textContent = s.CUR_SKY || '--';
+
+  let h = '';
+  for (let i=1;i<=8;i++){ if(!s[`HR${i}_TIME`]) continue;
+    const r = +s[`HR${i}_RAIN`];
+    h += `<div class="h"><div class="t">${s[`HR${i}_TIME`]}</div>${icon(s[`HR${i}_ICON`])}<div class="tp">${deg(s[`HR${i}_TEMP`])}</div><div class="r">${r>=20? r+'%':''}</div></div>`;
+  }
+  $('hours').innerHTML = h;
+
+  $('outlook').innerHTML = [['H3','Next 3 hours'],['H12','Next 12 hours'],['H24','Next 24 hours']].map(([w,l])=>
+    `<div class="ol">${icon(s[w+'_ICON'])}<div><div class="d">${l}</div><div class="s">${s[w+'_SUMMARY']||''}</div>
+     <div class="d">${deg(s[w+'_TEMP_LOW'])} – ${deg(s[w+'_TEMP_HIGH'])} · gusts ${s[w+'_GUST_MAX']??'--'} ${sp}${s[w+'_GUST_MAX_TIME']?' @ '+s[w+'_GUST_MAX_TIME']:''} · UV ${s[w+'_UV_MAX']??'--'}</div></div></div>`).join('');
+
+  let d = '';
+  for (let i=0;i<5;i++){ if(!s[`D${i}_NAME`]) continue;
+    const p = +s[`D${i}_RAIN_CHANCE`];
+    d += `<div class="d"><div class="n">${s[`D${i}_NAME`]}</div>${icon(s[`D${i}_ICON`])}<div class="w">${s[`D${i}_SUMMARY`]||''}</div>
+      <div class="p">${p>=20? '💧 '+p+'%':''}</div><div class="hl">${deg(s[`D${i}_HIGH`])} <span>${deg(s[`D${i}_LOW`])}</span></div></div>`;
+  }
+  $('days').innerHTML = d;
+
+  const a = $('alert'), active = +s.ALERT_ACTIVE === 1;
+  a.classList.toggle('on', active);
+  a.classList.toggle('moderate', active && !['Extreme','Severe'].includes(s.ALERT_HIGHEST_SEVERITY));
+  if (active){
+    $('alertTitle').textContent = `⚠ ${s.ALERT_COUNT} active NWS alert${+s.ALERT_COUNT>1?'s':''}`;
+    let r=''; for(let i=1;i<=3;i++){ if(!s[`ALERT${i}_EVENT`]) continue;
+      r += `<div class="row"><b>${s[`ALERT${i}_EVENT`]}</b><span>${s[`ALERT${i}_EXPIRES`]? 'until '+s[`ALERT${i}_EXPIRES`]:''}</span></div>`; }
+    $('alertRows').innerHTML = r;
+  }
+  $('foot').innerHTML = (+s.SYS_ONLINE===1 ? '' : '<span class="bad">Data stale · </span>') +
+    `Updated ${s.SYS_LAST_UPDATE||'--'} · ${credits(s)}`;
+}
+
+function credits(s){
+  const c = [];
+  const f = s.SYS_FORECAST_SOURCE || '';
+  c.push(f.startsWith('Open-Meteo') ? 'Forecast: Open-Meteo (CC BY 4.0)' : 'Forecast &amp; alerts: National Weather Service');
+  if (f.startsWith('Open-Meteo')) c.push('Alerts: National Weather Service');
+  const u = s.SYS_UV_SOURCE || '';
+  if (u.includes('EPA')) c.push('UV: EPA');
+  if (u.includes('MET Norway')) c.push('UV forecast: MET Norway (CC BY 4.0)');
+  if (s.SYS_SUN_SOURCE === 'US Naval Observatory') c.push('Sun: US Naval Observatory');
+  return c.join(' · ');
+}
+async function tick(){
+  try { render(await (await fetch('/api/state',{cache:'no-store'})).json()); }
+  catch(e){ $('foot').innerHTML = '<span class="bad">Bridge unreachable</span>'; }
+}
+tick(); setInterval(tick, 60000);
+</script>
+</body>
+</html>

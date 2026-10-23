@@ -1,0 +1,21 @@
+{
+  "tcp_port": 2350,
+  "http_port": 8642,
+  "refresh_seconds": 300,
+  "max_memory_mb": 150,
+  "units": "imperial",
+  "default_location": "77002",
+  "contact_email": "service@yourcompany.com",
+  "openmeteo_api_key": "",
+  "forecast_source": "auto",
+  "fetcher": "auto",
+  "thresholds": {
+    "wind_protect_gust": 25,
+    "rain_soon_chance": 50,
+    "rain_expected_chance": 40,
+    "freeze_temp": 32,
+    "high_uv": 8,
+    "heat_feels": 100,
+    "wind_icon_gust": 30
+  }
+}

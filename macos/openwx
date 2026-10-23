@@ -1,0 +1,123 @@
+#!/bin/bash
+# zsh is the macOS default shell: if started with "zsh file" or "sh file", relaunch in bash
+[ -n "${BASH_VERSION:-}" ] || exec /bin/bash "$0" "$@"
+# openwx - control the Savant OpenWx service on macOS
+#
+#   openwx status          service state, PID, memory, last update, errors
+#   openwx logs            follow the log (Ctrl-C to quit)
+#   openwx refresh         fetch weather now
+#   openwx probe 77379     one-off test fetch for a location (add nws or openmeteo to force a source)
+#   sudo openwx stop       clean shutdown (SIGTERM); stays stopped until start or reboot
+#   sudo openwx start
+#   sudo openwx restart    clean stop + start
+#   sudo openwx disable    stop and don't start at boot
+#   sudo openwx enable     start at boot again (and start now)
+#   sudo openwx uninstall  remove everything (add --keep-config to save config first)
+set -uo pipefail
+
+LABEL="org.openwx.bridge"
+PLIST="/Library/LaunchDaemons/${LABEL}.plist"
+SELF="$0"; [ -L "$SELF" ] && SELF="$(readlink "$SELF")"
+DIR="$(cd "$(dirname "$SELF")" && pwd)"
+LOG="$DIR/logs/bridge.log"
+
+cfg() { /usr/bin/python3 -c "import json;print(json.load(open('$DIR/config.json')).get('$1','$2'))" 2>/dev/null || echo "$2"; }
+TCP_PORT="$(cfg tcp_port 2350)"
+HTTP_PORT="$(cfg http_port 8642)"
+
+need_root() { [ "$(id -u)" -eq 0 ] || { echo "run with sudo: sudo openwx $1"; exit 1; }; }
+loaded()    { launchctl print "system/$LABEL" >/dev/null 2>&1; }
+pid()       { launchctl print "system/$LABEL" 2>/dev/null | awk '/^\tpid = /{print $3}'; }
+
+wait_gone() {  # wait for the process to exit after a stop
+  for _ in $(seq 1 20); do
+    lsof -nP -iTCP:"$TCP_PORT" -sTCP:LISTEN >/dev/null 2>&1 || return 0
+    sleep 1
+  done
+  echo "warning: still listening on $TCP_PORT after 20s"
+}
+
+case "${1:-status}" in
+  status)
+    if ! [ -f "$PLIST" ]; then echo "not installed"; exit 1; fi
+    if loaded; then
+      p="$(pid)"
+      if [ -n "$p" ]; then
+        mem=$(( $(ps -o rss= -p "$p" 2>/dev/null || echo 0) / 1024 ))
+        up="$(ps -o etime= -p "$p" 2>/dev/null | tr -d ' ')"
+        echo "running   pid $p   memory ${mem} MB (limit $(cfg max_memory_mb 150))   uptime $up"
+        echo "version   v$(sed -n 's/^VERSION = "\(.*\)"/\1/p' "$DIR/openwx_bridge.py" | head -1)   ($DIR)"
+      else
+        echo "loaded but not running (crashed or throttled - see: openwx logs)"
+      fi
+    else
+      echo "stopped"
+    fi
+    if launchctl print-disabled system 2>/dev/null | grep -Eq "\"$LABEL\" => (true|disabled)"; then
+      echo "autostart disabled"
+    fi
+    for pt in "$TCP_PORT" "$HTTP_PORT"; do
+      lsof -nP -iTCP:"$pt" -sTCP:LISTEN >/dev/null 2>&1 && echo "port $pt   listening" || echo "port $pt   not listening"
+    done
+    st="$(/usr/bin/curl -s --max-time 3 "http://127.0.0.1:$HTTP_PORT/api/state" 2>/dev/null)"
+    if [ -n "$st" ]; then
+      echo "$st" | /usr/bin/python3 -c '
+import json,sys; s=json.load(sys.stdin)
+print("location  {} ({})".format(s.get("SYS_LOCATION_NAME"), s.get("SYS_LOCATION_SOURCE")))
+print("forecast  {}".format(s.get("SYS_FORECAST_SOURCE") or "-"))
+print("updated   {}   online={}".format(s.get("SYS_LAST_UPDATE") or "never", s.get("SYS_ONLINE")))
+print("now       {}° {}".format(s.get("CUR_TEMP"), s.get("CUR_SUMMARY")))
+if s.get("SYS_ERROR"): print("error     " + s["SYS_ERROR"])
+if str(s.get("ALERT_ACTIVE")) == "1": print("ALERTS    " + s.get("ALERT_EVENTS", ""))'
+    fi
+    ;;
+  logs)    tail -n 50 -f "$LOG" ;;
+  refresh) (printf 'REFRESH\r\n'; sleep 1) | nc 127.0.0.1 "$TCP_PORT" >/dev/null && echo "refresh requested" ;;
+  probe)
+    shift
+    [ -n "${1:-}" ] || { echo "usage: openwx probe <zip | lat,lon | 'City, ST'> [nws|openmeteo]"; exit 1; }
+    PY=$(/usr/bin/python3 -c 'import sys;print(sys.executable)' 2>/dev/null || echo /usr/bin/python3)
+    "$PY" "$DIR/openwx_bridge.py" -c "$DIR/config.json" --probe "$1" ${2:+--source "$2"} 2>&1 | grep -v " INFO "
+    ;;
+  stop)
+    need_root stop
+    loaded || { echo "already stopped"; exit 0; }
+    launchctl bootout "system/$LABEL" && wait_gone && echo "stopped"   # launchd sends SIGTERM; SIGKILL after 15s
+    ;;
+  start)
+    need_root start
+    loaded && { echo "already running"; exit 0; }
+    launchctl enable "system/$LABEL"
+    launchctl bootstrap system "$PLIST" && echo "started"
+    ;;
+  restart)
+    need_root restart
+    if loaded; then launchctl bootout "system/$LABEL"; wait_gone; fi
+    launchctl enable "system/$LABEL"
+    launchctl bootstrap system "$PLIST" && echo "restarted"
+    ;;
+  disable)
+    need_root disable
+    loaded && { launchctl bootout "system/$LABEL"; wait_gone; }
+    launchctl disable "system/$LABEL" && echo "stopped and disabled at boot"
+    ;;
+  enable)
+    need_root enable
+    launchctl enable "system/$LABEL"
+    loaded || launchctl bootstrap system "$PLIST"
+    echo "enabled and running"
+    ;;
+  uninstall)
+    need_root uninstall
+    if [ -x "$DIR/uninstall.sh" ]; then
+      shift; exec "$DIR/uninstall.sh" "$@"      # full removal; pass --keep-config / --yes through
+    fi
+    loaded && { launchctl bootout "system/$LABEL"; wait_gone; }
+    rm -f "$PLIST" /usr/local/bin/openwx
+    echo "service removed. Files remain in $DIR (delete the folder to remove completely)."
+    ;;
+  *)
+    sed -n '/^# openwx - /,/^set -uo/p' "$SELF" | grep '^#' | sed 's/^# \{0,1\}//'
+    exit 1
+    ;;
+esac

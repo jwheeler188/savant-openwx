@@ -1,0 +1,17 @@
+[Unit]
+Description=Savant OpenWx weather bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/openwx
+ExecStart=/usr/bin/python3 /opt/openwx/openwx_bridge.py -c /opt/openwx/config.json
+KillSignal=SIGTERM
+TimeoutStopSec=15
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
