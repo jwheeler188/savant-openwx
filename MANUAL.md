@@ -1,6 +1,6 @@
 # Savant OpenWx — User Manual
 
-**Version 2.0.0** · Weather, forecast and severe-weather alerts for Savant, as plain states you can show on custom screens and use in triggers.
+**Version 2.0.2** · Weather, forecast and severe-weather alerts for Savant, as plain states you can show on custom screens and use in triggers.
 
 *Savant OpenWx is an independent community project. It is not affiliated with, endorsed by, or supported by Savant Systems, Inc. "Savant" is a trademark of Savant Systems, Inc. Released under the MIT License.*
 
@@ -85,7 +85,7 @@ Not yet tested: Savant Smart Hosts / Linux-based Pro hosts. The bridge runs on L
 1. Copy the unzipped `savant-openwx` folder to the Savant Mac host.
 2. In Terminal: `cd savant-openwx/macos` then `sudo ./install.sh`.
 3. Check it: `openwx probe 77002` (any ZIP). You should see current weather and `SYS_ONLINE 1`.
-4. In Blueprint, import `profile/openwx_weatherbridge.xml` (keep that exact file name) and drag **OpenWx WeatherBridge** into the layout.
+4. In Blueprint, import `profile/blueprint-import/openwx_weatherbridge.xml` (keep that exact file name) and drag **OpenWx WeatherBridge** into the layout.
 5. Inspector → *Control Ports* → set the Ethernet **Device IP Address** to the host's own IP.
 6. Inspector → *State Variables* → enter **Location Override** (a ZIP code works best) and **Contact Email**.
 7. Upload the configuration.
@@ -163,7 +163,9 @@ Give the machine a DHCP reservation and use its IP in Blueprint. `sudo systemctl
 
 ### 6.1 Import and add the component
 
-1. In Blueprint's component library, use **Import** to add `profile/openwx_weatherbridge.xml`.
+1. In Blueprint's component library, use **Import** to add `profile/blueprint-import/openwx_weatherbridge.xml`.
+   - **Upgrading from 2.0.0:** delete the older OpenWx entry from the library first, then import. Earlier releases had the profile directly in `profile/`.
+   - **Import it from that folder.** Blueprint also copies in this manual (`openwx_weatherbridge.htm`), shown on the component's **Documentation** tab, and the component icon (`openwx_weatherbridge.icns`), but only from beside the `.xml`. Keep the three files together.
    - **Keep the file name exactly as shipped.** Blueprint finds profiles by a file name built from the manufacturer and model (all lowercase, everything that isn't a letter or digit turned into `_`). A renamed file, including a browser download saved as `openwx_weatherbridge (1).xml`, imports and shows in the library but fails with **"Component not found"** when dragged into the layout.
 2. Search the library for *OpenWx* and drag **OpenWx WeatherBridge** into the layout. Blueprint names it *Weather Station Controller*; rename it if you like (for example *Internet Weather*).
 3. Connect its **Ethernet** port to your network, as you would any IP device.
@@ -448,6 +450,7 @@ The uninstaller removes only what the installer recorded: the service, the `open
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | **"Component not found"** when dragging the profile into the layout | File renamed, or an older copy still in the library | Import `openwx_weatherbridge.xml` with that exact name; delete older OpenWx entries from the library first |
+| Documentation tab greyed out, or the icon is a *?* | Profile imported without `openwx_weatherbridge.htm` and `.icns` beside it, or an older OpenWx entry still in the library | Delete every OpenWx entry from the library, quit and reopen Blueprint, and import from `profile/blueprint-import/`. A component added before the icon was in the library keeps the *?*: remove it and add it again |
 | Labels show the state's name instead of a value | State name typed instead of dragged | Drag the state from the State browser → Component tab (section 8.1) |
 | Labels show `--` | That state is empty, or the bridge is older than the profile | `openwx status` (versions match?); `openwx refresh` |
 | No `savant connected` in the log | Wrong IP in Blueprint, Ethernet not connected, or firewall | Check the Device IP; `openwx status` shows port 2350 listening; allow Python in macOS Firewall settings |
@@ -503,8 +506,12 @@ savant-openwx/
   STATES.md                  every state (also Appendix A)
   CHANGELOG.md, LICENSE
   profile/
-    openwx_weatherbridge.xml the Blueprint profile
-    generate_profile.py      builds the profile from the bridge's state list
+    blueprint-import/        import from here; keep the three files together:
+      openwx_weatherbridge.xml   the Blueprint profile
+      openwx_weatherbridge.htm   this manual, for the Documentation tab
+      openwx_weatherbridge.icns  the component icon
+    generate_profile.py      builds the profile, the Documentation tab page and blueprint-import/
+    icon.svg, make_icon.sh   icon source, and the macOS script that builds the .icns from it
   bridge/
     openwx_bridge.py         the bridge (Python 3.6+, standard library only)
     dashboard.html           web dashboard
@@ -544,7 +551,9 @@ The profile is generated from the bridge's state list so the two never drift apa
 
 1. Add or change states in `STATE_DEFS` and fill them in `Bridge.compute()` / `add_display_text()` in `openwx_bridge.py`.
 2. Bump `VERSION`.
-3. Run `python3 profile/generate_profile.py`. It writes `openwx_weatherbridge.xml` with `rpm_xml_version` equal to `VERSION`. `python3 profile/generate_profile.py --test` also writes a 3-state profile for diagnosing import problems.
+3. Run `python3 profile/generate_profile.py`. It writes `blueprint-import/openwx_weatherbridge.xml` with `rpm_xml_version` equal to `VERSION`, and the Documentation tab page `blueprint-import/openwx_weatherbridge.htm` built from `MANUAL.md` and `STATES.md`. The profile is only written there, so it can't be imported without its documentation and icon. `python3 profile/generate_profile.py --test` also writes a 3-state profile for diagnosing import problems. After changing `icon.svg`, run `profile/make_icon.sh` (macOS); it writes `blueprint-import/openwx_weatherbridge.icns`.
+
+Edit `MANUAL.md` and `STATES.md`, never the generated `.htm`. On macOS the generator also makes the smaller JPEG copies of the screenshots in `docs/images/web/` that the page embeds.
 
 Profile notes learned the hard way:
 - **File name:** must equal lowercase `manufacturer_model`, with every non-alphanumeric character turned into `_`.
@@ -553,6 +562,7 @@ Profile notes learned the hard way:
 - **Incoming lines:** split with `receive_end_condition` 0A and read each value with `terminator_type="end_of_data"`.
 - **Outgoing commands:** end with `send_postfix` 0A, and use `<parameter_list>` to append state variables.
 - **Startup actions:** `execute_on_schedule period_ms="0"` runs an action when the host starts.
+- **Re-importing:** bump `rpm_xml_version` (it follows `VERSION`) for every revision, so Blueprint picks up the new profile.
 
 ### 14.4 Command-line options
 
@@ -565,4 +575,4 @@ python3 openwx_bridge.py -c config.json --probe 77002 [--source nws|openmeteo]
 
 ## Appendix A — State reference
 
-See `STATES.md` in the package for the complete table of all 248 states with types and descriptions. It's also reproduced on the following pages of the PDF.
+See `STATES.md` in the package for the complete table of all 248 states with types and descriptions. It's also reproduced on the following pages of the PDF and the Documentation tab.

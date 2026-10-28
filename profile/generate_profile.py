@@ -3,13 +3,21 @@
 Generates the Savant Blueprint component profile from the bridge's STATE_DEFS,
 so the profile's status parsers always match what the bridge sends.
 
-    python3 generate_profile.py            -> writes openwx_weatherbridge.xml
+    python3 generate_profile.py            -> writes blueprint-import/ (the folder to import from):
+                                                openwx_weatherbridge.xml
+                                                openwx_weatherbridge.htm (Documentation tab,
+                                                  built from MANUAL.md and STATES.md)
+                                                (openwx_weatherbridge.icns comes from make_icon.sh)
 
 Structure follows Savant's own Weather_controller profiles (Weatherflow Tempest,
 Yahoo Weather Client): empty <implementation>, user-editable state variables set
 in Inspector, <parameter_list> for command parameters, and execute_on_schedule
 to run actions at startup.
 """
+import base64
+import html as htmllib
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from xml.sax.saxutils import escape
@@ -32,7 +40,14 @@ def profile_filename(manufacturer, model):
     return re.sub(r"[^a-z0-9]", "_", f"{manufacturer}_{model}".lower()) + ".xml"
 
 
-OUT = HERE / profile_filename(MANUFACTURER, MODEL)
+# blueprint-import/ is the import package. Blueprint's Import picks up <name>.htm (the Documentation
+# tab) and <name>.icns (the icon) only from the folder the <name>.xml is imported from, and files them
+# into its library's documentation/ and images/ itself; subfolders are ignored. The profile is only
+# written here, so it can't be imported from a folder without them.
+PKG = HERE / "blueprint-import"
+OUT = PKG / profile_filename(MANUFACTURER, MODEL)
+DOC = OUT.with_suffix(".htm")
+ICON = OUT.with_suffix(".icns")
 
 
 # Thresholds editable in Blueprint Inspector. Blank = use the bridge's config.json value.
@@ -91,7 +106,7 @@ HEAD = f"""<?xml version="1.0" encoding="UTF-8"?>
     <notes>
 
         Savant OpenWx: weather, forecast and NWS watches/warnings from the OpenWx bridge service.
-        Manual: MANUAL.pdf in the release package.
+        Full user manual: the Documentation tab (also MANUAL.pdf in the release package).
         Values update every 5 minutes; only changed values are sent.
 
         SETUP
@@ -113,6 +128,11 @@ HEAD = f"""<?xml version="1.0" encoding="UTF-8"?>
 
         Location priority on the bridge: Location Override, then Site Coordinates, then default_location in its config.json.
         All weather states are listed in STATES.md. Gate weather automations on SYS_ONLINE = 1.
+
+        ====================== Change Log ==================
+        Version: 2.0.2 Change: Import fix. The profile, Documentation tab page and icon now sit side by side in profile/blueprint-import, which is where Blueprint looks for them; 2.0.1's subfolders gave a fresh import no icon and no Documentation tab.
+        Version: 2.0.1 Change: Shipped in Blueprint's import layout (blueprint-import folder) so the user manual (Documentation tab) and component icon import with the profile.
+        Version: 2.0.0 Change: First public release. Savant connection on port 2350.
 
     </notes>
     <control_interfaces preferred="ip">
@@ -223,11 +243,196 @@ def build():
         "</component>",
         "",
     ]
+    OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text("\n".join(body), encoding="utf-8")
-    print(f"wrote {OUT.name}: {len(STATE_DEFS)} status parsers")
+    print(f"wrote {OUT.relative_to(HERE)}: {len(STATE_DEFS)} status parsers")
+
+
+# ---------------------------------------------------------------------------------------------
+# Documentation tab: Blueprint shows <profile name>.htm (filed in its library's documentation/) for a component.
+# Built from MANUAL.md (with STATES.md as Appendix A) by the small Markdown converter below,
+# which covers only what the manual uses. Screenshots are embedded as data: URIs, so the page
+# is one self-contained file. The page is ASCII: other characters become &#...; references.
+
+ROOT = HERE.parent
+IMAGES = ROOT / "docs" / "images"
+DOC_IMAGE_WIDTH = 900  # px; screenshots are scaled down to this for the embedded copies
+
+
+def doc_image(src):
+    """data: URI for a manual image. On macOS, sips makes a smaller JPEG copy in docs/images/web/
+    (committed, so other platforms reuse it); otherwise the original file is embedded."""
+    png = ROOT / src
+    web = IMAGES / "web" / (png.stem + ".jpg")
+    if shutil.which("sips") and (not web.exists() or web.stat().st_mtime < png.stat().st_mtime):
+        web.parent.mkdir(exist_ok=True)
+        subprocess.run(["sips", "-s", "format", "jpeg", "-s", "formatOptions", "70",
+                        "--resampleWidth", str(DOC_IMAGE_WIDTH), str(png), "--out", str(web)],
+                       check=True, stdout=subprocess.DEVNULL)
+    f = web if web.exists() else png
+    mime = "image/jpeg" if f.suffix == ".jpg" else "image/png"
+    return f"data:{mime};base64," + base64.b64encode(f.read_bytes()).decode("ascii")
+
+
+def slug(text):
+    """GitHub's heading anchors, so the manual's table-of-contents links work unchanged."""
+    text = re.sub(r"<[^>]+>", "", text).lower()
+    return re.sub(r"[^\w\- ]", "", text).replace(" ", "-")
+
+
+def inline(text):
+    codes = []
+
+    def keep(m):
+        codes.append(f"<code>{htmllib.escape(m.group(1), quote=False)}</code>")
+        return f"\x00{len(codes) - 1}\x00"
+
+    text = re.sub(r"`([^`]+)`", keep, text)
+    text = htmllib.escape(text, quote=False)
+    text = re.sub(r"!\[([^\]]*)\]\(([^)]+)\)",
+                  lambda m: f'<img src="{doc_image(m.group(2))}" alt="{attr(m.group(1))}">', text)
+    text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', text)
+    text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
+    text = re.sub(r"(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?!\w)", r"<i>\1</i>", text)
+    return re.sub(r"\x00(\d+)\x00", lambda m: codes[int(m.group(1))], text)
+
+
+def cells(row):
+    row = row.strip().strip("|")
+    return [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", row)]
+
+
+LIST_ITEM = re.compile(r"^(\s*)([-*]|\d+\.)\s+")
+
+
+def md_blocks(lines):
+    out, i = [], 0
+    while i < len(lines):
+        line, s = lines[i], lines[i].strip()
+        if not s:
+            i += 1
+        elif s.startswith("```"):
+            pad = len(line) - len(line.lstrip())
+            j = i + 1
+            while j < len(lines) and not lines[j].strip().startswith("```"):
+                j += 1
+            code = "\n".join(l[pad:] if l[:pad].isspace() else l.lstrip() for l in lines[i + 1:j])
+            out.append(f"<pre>{htmllib.escape(code, quote=False)}</pre>")
+            i = j + 1
+        elif s == "---":
+            out.append("<hr>")
+            i += 1
+        elif s.startswith("#"):
+            level = len(s) - len(s.lstrip("#"))
+            text = inline(s[level:].strip())
+            out.append(f'<h{level} id="{slug(text)}">{text}</h{level}>')
+            i += 1
+        elif s.startswith(">"):
+            j = i
+            while j < len(lines) and lines[j].strip().startswith(">"):
+                j += 1
+            quote = [l.strip()[1:].lstrip() for l in lines[i:j]]
+            out.append(f'<div class="note">{md_blocks(quote)}</div>')
+            i = j
+        elif s.startswith("|"):
+            j = i
+            while j < len(lines) and lines[j].strip().startswith("|"):
+                j += 1
+            head, rows = cells(lines[i]), [cells(r) for r in lines[i + 2:j]]
+            th = "" if not any(head) else "<tr>" + "".join(f"<th>{inline(c)}</th>" for c in head) + "</tr>\n"
+            td = "".join("<tr>" + "".join(f"<td>{inline(c)}</td>" for c in r) + "</tr>\n" for r in rows)
+            out.append(f"<table>\n{th}{td}</table>")
+            i = j
+        elif re.fullmatch(r"!\[[^\]]*\]\([^)]+\)", s):
+            alt = re.match(r"!\[([^\]]*)\]", s).group(1)
+            out.append(f'<div class="figure">{inline(s)}<div class="caption">{inline(alt)}</div></div>')
+            i += 1
+        elif LIST_ITEM.match(line):
+            i = md_list(lines, i, out)
+        else:
+            j = i
+            while (j < len(lines) and lines[j].strip() and not LIST_ITEM.match(lines[j])
+                   and not lines[j].strip().startswith(("#", "|", "```", ">"))):
+                j += 1
+            out.append("<p>" + inline(" ".join(l.strip() for l in lines[i:j])) + "</p>")
+            i = j
+    return "\n".join(out)
+
+
+def md_list(lines, i, out):
+    """A list at one indent. Lines indented past the marker, including fenced code and nested
+    lists, belong to the item above them."""
+    m = LIST_ITEM.match(lines[i])
+    indent, ordered = len(m.group(1)), m.group(2)[0].isdigit()
+    items = []
+    while i < len(lines):
+        m = LIST_ITEM.match(lines[i])
+        if not m or len(m.group(1)) != indent:
+            break
+        cut = m.end()  # continuation lines are indented to the item's text
+        body, i = [lines[i][cut:]], i + 1
+        while i < len(lines):
+            l = lines[i]
+            if l.strip() and len(l) - len(l.lstrip()) <= indent:
+                break
+            if not l.strip() and not (i + 1 < len(lines) and len(lines[i + 1]) - len(lines[i + 1].lstrip()) > indent):
+                break
+            body.append(l[cut:] if l[:cut].isspace() else l.lstrip())
+            i += 1
+        html = md_blocks(body)
+        if html.startswith("<p>") and html.count("<p>") == 1:
+            html = html[3:].replace("</p>", "", 1)
+        items.append(f"<li>{html}</li>")
+    tag = "ol" if ordered else "ul"
+    out.append(f"<{tag}>\n" + "\n".join(items) + f"\n</{tag}>")
+    return i
+
+
+DOC_CSS = """
+body { font-family: -apple-system, Helvetica, Arial, sans-serif; font-size: 13px; line-height: 1.45; margin: 16px 20px; color: #222; max-width: 980px; }
+h1 { font-size: 22px; margin: 0 0 6px; }
+h2 { font-size: 17px; margin: 26px 0 8px; border-bottom: 1px solid #ccc; padding-bottom: 3px; }
+h3 { font-size: 14px; margin: 18px 0 6px; }
+table { border-collapse: collapse; margin: 6px 0 10px; }
+td, th { font-size: 13px; border: 1px solid #ccc; padding: 4px 8px; text-align: left; vertical-align: top; }
+th { background: #f0f0f0; }
+code, pre { font-family: Menlo, Monaco, monospace; font-size: 12px; }
+pre { background: #f4f4f4; padding: 6px 10px; overflow-x: auto; }
+hr { border: 0; border-top: 1px solid #ddd; margin: 18px 0; }
+.note { background: #fff8e0; border: 1px solid #e8d48a; padding: 2px 10px; margin: 8px 0; }
+.figure { margin: 10px 0 14px; }
+.figure img { max-width: 100%; max-height: 560px; border: 1px solid #ddd; }
+.caption { color: #666; font-size: 12px; margin-top: 3px; }
+"""
+
+
+def docs_html():
+    """The whole user manual as the Documentation tab page, with STATES.md as Appendix A."""
+    manual = (ROOT / "MANUAL.md").read_text(encoding="utf-8").splitlines()
+    states = (ROOT / "STATES.md").read_text(encoding="utf-8").splitlines()
+    # Appendix A: STATES.md's own title is dropped and its sections become h3s under the appendix heading
+    states = ["#" + l if l.startswith("## ") else l for l in states if not l.startswith("# ")]
+    body = md_blocks(manual + [""] + states)
+    page = f"""<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=us-ascii">
+<title>Savant OpenWx {VERSION}</title>
+<style>{DOC_CSS}</style>
+</head>
+<body>
+{body}
+</body>
+</html>
+"""
+    DOC.parent.mkdir(parents=True, exist_ok=True)
+    DOC.write_bytes(page.encode("ascii", "xmlcharrefreplace"))
+    print(f"wrote {DOC.relative_to(HERE)}: Documentation tab ({DOC.stat().st_size // 1024} KB)")
 
 
 if __name__ == "__main__":
     build()
+    docs_html()
+    if not ICON.exists():
+        print(f"warning: {ICON.relative_to(HERE)} missing: run make_icon.sh (macOS)")
     if "--test" in sys.argv:  # optional 3-state profile for diagnosing import problems
         build_minimal()

@@ -20,12 +20,12 @@ openwx probe 77002
 
 Then in Blueprint:
 
-1. Import `profile/openwx_weatherbridge.xml` (keep the file name).
+1. Import `profile/blueprint-import/openwx_weatherbridge.xml` (keep the file name). Blueprint also picks up the icon and the full manual (the component's **Documentation** tab) from the `.icns` and `.htm` beside it, so keep the three files together.
 2. Add **OpenWx WeatherBridge** to the layout and set its Ethernet IP to the host.
 3. Enter Location Override and Contact Email.
 4. Upload.
 
-**Read [MANUAL.pdf](MANUAL.pdf)** (or [MANUAL.md](MANUAL.md)) for setup, custom screens, automations, troubleshooting and the full state list.
+**Read [MANUAL.pdf](MANUAL.pdf)** (or [MANUAL.md](MANUAL.md), or the component's Documentation tab in Blueprint) for setup, custom screens, automations, troubleshooting and the full state list.
 
 ## Package contents
 
@@ -33,7 +33,8 @@ Then in Blueprint:
 |---|---|
 | `MANUAL.pdf`, `MANUAL.md` | User manual |
 | `STATES.md` | All 248 states |
-| `profile/` | Blueprint profile and its generator |
+| `profile/blueprint-import/` | Import from here: Blueprint profile (`.xml`), Documentation tab page (`.htm`) and icon (`.icns`), side by side |
+| `profile/` | Profile generator and icon source |
 | `bridge/` | Bridge service, dashboard, default config |
 | `macos/` | Installer, uninstaller, `openwx` control command |
 | `linux/` | systemd unit |

@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Savant OpenWx profile icon: sun behind a cloud, with a network badge for the bridge.
+       make_icon.sh turns this into openwx_weatherbridge.icns. -->
+  <defs>
+    <radialGradient id="sun" cx="0.4" cy="0.35" r="0.7">
+      <stop offset="0" stop-color="#ffe680"/>
+      <stop offset="0.6" stop-color="#ffc21a"/>
+      <stop offset="1" stop-color="#f29d00"/>
+    </radialGradient>
+    <linearGradient id="cloud" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#cfd8e3"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#a9b6c6"/>
+      <stop offset="1" stop-color="#7b8a9c"/>
+    </linearGradient>
+  </defs>
+  <!-- sun rays -->
+  <g stroke="#ffb300" stroke-width="40" stroke-linecap="round">
+    <line x1="420" y1="88" x2="420" y2="168"/>
+    <line x1="420" y1="592" x2="420" y2="672"/>
+    <line x1="128" y1="380" x2="208" y2="380"/>
+    <line x1="632" y1="380" x2="712" y2="380"/>
+    <line x1="213" y1="173" x2="270" y2="230"/>
+    <line x1="570" y1="530" x2="627" y2="587"/>
+    <line x1="213" y1="587" x2="270" y2="530"/>
+    <line x1="570" y1="230" x2="627" y2="173"/>
+  </g>
+  <circle cx="420" cy="380" r="160" fill="url(#sun)"/>
+  <!-- cloud -->
+  <path d="M250 880 h520 a150 150 0 0 0 18 -299 a210 210 0 0 0 -400 -40 a170 170 0 0 0 -138 339 z"
+        fill="url(#edge)"/>
+  <path d="M256 862 h508 a132 132 0 0 0 14 -263 a192 192 0 0 0 -374 -34 a152 152 0 0 0 -148 297 z"
+        fill="url(#cloud)"/>
+  <!-- network badge -->
+  <circle cx="800" cy="800" r="132" fill="#1f8fe0" stroke="#ffffff" stroke-width="18"/>
+  <g fill="none" stroke="#ffffff" stroke-width="24" stroke-linecap="round">
+    <path d="M728 800 a72 72 0 0 1 144 0"/>
+    <path d="M758 832 a42 42 0 0 1 84 0" transform="translate(0,-32)"/>
+  </g>
+  <circle cx="800" cy="838" r="18" fill="#ffffff"/>
+</svg>

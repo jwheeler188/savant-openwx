@@ -1,4 +1,4 @@
-# Savant OpenWx — state reference (v2.0.0)
+# Savant OpenWx — state reference (v2.0.2)
 
 All 248 states exist in the Blueprint profile under the same names, on the component's logical component **Weather**.
 Drag them from Blueprint's State browser (Component tab) into labels, triggers and workflows.
